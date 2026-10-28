@@ -16,12 +16,20 @@ Reachable related deletion policies must use a known Django policy and share the
 registered model's static write and migration alias. Forward foreign-key owners and
 reverse relations are both checked. This prevents cross-alias related deletion from
 becoming an unowned revision path without excluding valid local owner relations.
+Django `SET` is that policy when the handler is the nested `set_on_delete`
+function in `django.db.models.deletion` and `deconstruct()` returns
+`("django.db.models.SET", (value,), {})`. `CASCADE`, `SET_NULL`, and `SET_DEFAULT`
+remain accepted by function identity. Other callables stay rejected.
 
 Rejected: serializing model instances or querysets. Their object behavior and
 Django-version coupling make a closed data boundary impossible.
 
 Rejected: a partial registry before codec validation. It would admit models that a
 later codec phase must invalidate, making registration state unreliable.
+
+Rejected: treating `lazy_sub_objs` as the Django `SET` fingerprint. Django 5.2
+stopped setting it on callable `SET` while the handler still schedules the
+collector field update.
 
 See docs/adr/001_safe_codec_registry.md.
 
@@ -70,3 +78,18 @@ repository or release artifact. Docker health events gate test execution without
 polling or a fixed delay.
 
 See docs/adr/003_safe_cache_transports.md.
+
+## Revision-checked tree snapshots
+
+Safe tree snapshots are selected only through an explicit dedicated safe cache alias
+for active registered models. The authoritative revision selects an immutable key.
+Snapshots are rebuilt from PostgreSQL READ COMMITTED or SQLite IMMEDIATE database
+transactions, checked against the revision before publication, and added without
+replacing existing bytes. Cache failure, malformed data, active transactions, and
+unstable rebuilds return database rows without touching the cache.
+
+Rejected: invalidating or replacing a current cache key after a write. A committed
+revision selects a new immutable key, so old or malformed bytes cannot overwrite a
+newer snapshot or make a committed mutation look failed.
+
+See docs/adr/004_revision_checked_snapshots.md.

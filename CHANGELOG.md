@@ -8,11 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -   Add an opt-in closed safe snapshot codec and model registry.
 -   Reject incomplete field registrations, unsafe materialization, and malformed snapshots.
 -   Reject deeply mutable codecs and cross-alias related deletion registrations.
+-   Recognize Django `SET` related deletion, including callable values, by its `deconstruct()` path.
 -   Add transactional per-model revisions for registered tree mutations.
 -   Serialize concurrent first revision increments with a database upsert.
 -   Reject related-owner deletions whose instance or queryset route differs from a registered tree alias.
 -   Add safe memory and Redis cache backends with bounded non-pickle values.
 -   Validate Redis TLS cache transport in CI with ephemeral credentials.
+-   Add opt-in revision-checked safe tree snapshots with database-only fallback.
 
 ## [0.25.0](https://github.com/fabiocaccamo/django-treenode/releases/tag/0.25.0) - 2026-08-26
 -   Add `Django 6.1` support.

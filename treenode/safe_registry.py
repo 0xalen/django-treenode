@@ -60,15 +60,33 @@ def _validate_router(model: type) -> str:
     return alias
 
 
-def _is_supported_on_delete(handler: object) -> bool:
-    if handler in (CASCADE, SET_NULL, SET_DEFAULT):
-        return True
+def _is_django_set(handler: object) -> bool:
+    # deconstruct() identifies SET. Django 5.2 omits lazy_sub_objs on callable SET.
+    if (
+        not callable(handler)
+        or getattr(handler, "__module__", "") != "django.db.models.deletion"
+        or getattr(handler, "__name__", "") != "set_on_delete"
+    ):
+        return False
+    deconstruct = getattr(handler, "deconstruct", None)
+    if not callable(deconstruct):
+        return False
+    reconstructed = deconstruct()
+    if type(reconstructed) is not tuple or len(reconstructed) != 3:
+        return False
+    path, args, kwargs = reconstructed
     return (
-        callable(handler)
-        and getattr(handler, "__module__", "") == "django.db.models.deletion"
-        and getattr(handler, "__name__", "") == "set_on_delete"
-        and getattr(handler, "lazy_sub_objs", False)
+        type(path) is str
+        and path == "django.db.models.SET"
+        and type(args) is tuple
+        and len(args) == 1
+        and type(kwargs) is dict
+        and not kwargs
     )
+
+
+def _is_supported_on_delete(handler: object) -> bool:
+    return handler in (CASCADE, SET_NULL, SET_DEFAULT) or _is_django_set(handler)
 
 
 def _validate_related_routing(model: type, alias: str) -> None:

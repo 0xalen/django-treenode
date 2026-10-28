@@ -96,6 +96,21 @@ def get_active_registration(model: type) -> SafeModelRegistration | None:
     return registration if is_active(registration.model) else None
 
 
+def current_revision(model: type, using: str) -> int:
+    from treenode.models import TreeNodeCacheRevision
+
+    registration = get_active_registration(model)
+    if not registration or registration.alias != using:
+        raise SafeActivationError("model is not active on the requested alias")
+    value = (
+        TreeNodeCacheRevision.objects.using(using)
+        .filter(model_label=registration.model._meta.label_lower)
+        .values_list("revision", flat=True)
+        .first()
+    )
+    return 0 if value is None else value
+
+
 def verify_instance_alias(instance, using: str | None = None) -> str | None:
     registration = get_active_registration(instance.__class__)
     if not registration:

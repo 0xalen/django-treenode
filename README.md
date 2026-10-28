@@ -207,6 +207,25 @@ waits for Docker health events, and is removed after the test job. Deployment
 certificates and connection settings remain application configuration, not package
 artifacts.
 
+### Revision-checked tree snapshots
+
+Tree snapshots remain disabled until a registered active model and a dedicated safe
+cache alias are configured. Do not use `default` or `treenode` for this alias.
+
+```python
+TREENODE_SAFE_CACHE_ALIAS = "safe"
+TREENODE_SAFE_CACHE_TIMEOUT = 300
+TREENODE_SAFE_CACHE_REBUILD_ATTEMPTS = 2
+```
+
+`get_safe_snapshot(Category, using="default")` reads the authoritative revision
+before selecting its immutable revision key. Cache misses acquire a complete primary
+database snapshot, verify its revision, and publish only with add-if-absent. Active
+database transactions, malformed entries, cache failures, and unstable rebuilds use
+database rows without writing or deleting a cache entry. The legacy object cache
+remains unchanged unless this opt-in setting is configured for an active registered
+model.
+
 ## Usage
 
 ### Methods/Properties

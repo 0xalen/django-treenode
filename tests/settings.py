@@ -59,6 +59,12 @@ if os.environ.get("TREENODE_TEST_ROUTER_ALIASES"):
         "NAME": ":memory:",
     }
 
+DATABASES["other"] = {
+    "ENGINE": "django.db.backends.sqlite3",
+    "NAME": ":memory:",
+    "TEST": {"NAME": ":memory:"},
+}
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",

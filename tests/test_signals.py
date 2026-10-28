@@ -4,7 +4,7 @@ from django.core.management.sql import emit_post_migrate_signal
 from django.db import OperationalError, ProgrammingError, connection
 from django.test import TransactionTestCase
 
-from tests.models import Category
+from tests.models import Category, CategoryOwner
 
 ModelToBeDestroyed = Category
 
@@ -19,10 +19,16 @@ class TreeNodeDropTableTestCase(TransactionTestCase):
 
     def test_destroy_model(self):
         table_name = ModelToBeDestroyed._meta.db_table
+        # tests_categoryowner.category references this table. PostgreSQL
+        # rejects a plain DROP; CASCADE removes that foreign key, not the
+        # referencing table. SQLite rejects CASCADE and accepts a plain DROP.
+        drop_table = f"DROP TABLE {table_name}"
+        if connection.vendor == "postgresql":
+            drop_table = f"DROP TABLE {table_name} CASCADE"
         try:
             # drop the table (as if by a `migrate app zero`)
             with connection.cursor() as cursor:
-                cursor.execute(f"DROP TABLE {table_name}")
+                cursor.execute(drop_table)
 
             # try to use the model - this should raise an error
             with self.assertRaises((OperationalError, ProgrammingError)):
@@ -42,6 +48,16 @@ class TreeNodeDropTableTestCase(TransactionTestCase):
         finally:
             with connection.schema_editor() as editor:
                 editor.create_model(ModelToBeDestroyed)
+                if connection.vendor == "postgresql":
+                    # CASCADE dropped this constraint; the referencing table stayed.
+                    field = CategoryOwner._meta.get_field("category")
+                    editor.execute(
+                        editor._create_fk_sql(
+                            CategoryOwner,
+                            field,
+                            "_fk_%(to_table)s_%(to_column)s",
+                        )
+                    )
 
 
 class TreeNodeAbstractProxyTestCase(TransactionTestCase):
