@@ -131,3 +131,17 @@ if os.environ.get("TREENODE_TEST_REDIS_URL"):
         "KEY_PREFIX": "safe-redis-other-tests",
         "OPTIONS": {"NAMESPACE": "safe-redis-other-tests", "socket_connect_timeout": 1},
     }
+
+if os.environ.get("TREENODE_TEST_REDIS_TLS_URL") and os.environ.get("TREENODE_TEST_REDIS_TLS_CA"):
+    CACHES["safe_redis_tls"] = {
+        "BACKEND": "treenode.backends.redis.SafeRedisCache",
+        "LOCATION": os.environ["TREENODE_TEST_REDIS_TLS_URL"],
+        "KEY_PREFIX": "safe-redis-tls-tests",
+        "OPTIONS": {
+            "NAMESPACE": "safe-redis-tls-tests",
+            "socket_connect_timeout": 1,
+            "ssl_cert_reqs": "required",
+            "ssl_ca_certs": os.environ["TREENODE_TEST_REDIS_TLS_CA"],
+            "ssl_check_hostname": True,
+        },
+    }

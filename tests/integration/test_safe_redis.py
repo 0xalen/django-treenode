@@ -1,10 +1,13 @@
 import asyncio
 import os
+import threading
+import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 
 from django.core.cache import caches
 from django.test import SimpleTestCase
+from treenode.backends.redis import SafeRedisCache
 
 
 class SafeRedisCacheIntegrationTests(SimpleTestCase):
@@ -88,3 +91,34 @@ class SafeRedisCacheIntegrationTests(SimpleTestCase):
         with self.assertRaises(Exception) as error:
             outage.get("unavailable")
         self.assertIn("Connection", type(error.exception).__name__)
+
+    def test_positive_timeout_expires_by_monotonic_deadline(self):
+        self.cache.set("positive-ttl", "value", timeout=1)
+        deadline = time.monotonic() + 3
+        waiter = threading.Event()
+        while self.cache.get("positive-ttl") is not None and time.monotonic() < deadline:
+            waiter.wait(0.02)
+        self.assertLess(time.monotonic(), deadline)
+        self.assertIsNone(self.cache.get("positive-ttl"))
+
+    def test_tls_handshake_and_certificate_fail_closed(self):
+        if "safe_redis_tls" not in caches:
+            raise unittest.SkipTest("requires TLS Redis URL and CA")
+        tls = caches["safe_redis_tls"]
+        tls.clear()
+        self.assertTrue(tls.set("handshake", "verified"))
+        self.assertEqual(tls.get("handshake"), "verified")
+
+        untrusted = SafeRedisCache(
+            os.environ["TREENODE_TEST_REDIS_TLS_URL"],
+            {"TIMEOUT": 1, "OPTIONS": {"NAMESPACE": "safe-redis-untrusted", "ssl_cert_reqs": "required", "ssl_check_hostname": True, "socket_connect_timeout": 1}},
+        )
+        with self.assertRaises(Exception):
+            untrusted.get("handshake")
+
+        mismatched = SafeRedisCache(
+            os.environ["TREENODE_TEST_REDIS_TLS_URL"].replace("localhost", "localhost."),
+            {"TIMEOUT": 1, "OPTIONS": {"NAMESPACE": "safe-redis-mismatch", "ssl_cert_reqs": "required", "ssl_ca_certs": os.environ["TREENODE_TEST_REDIS_TLS_CA"], "ssl_check_hostname": True, "socket_connect_timeout": 1}},
+        )
+        with self.assertRaises(Exception):
+            mismatched.get("handshake")
