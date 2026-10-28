@@ -70,6 +70,13 @@ class CategoryWithoutDisplayField(TreeNodeModel):
         verbose_name_plural = "Categories"
 
 
+class CategoryOwner(models.Model):
+    category = models.ForeignKey(Category, on_delete=models.CASCADE)
+
+    class Meta:
+        app_label = "tests"
+
+
 class _ABCMetaModelBase(ABCMeta, ModelBase):
     """Metaclass combining Python's ABCMeta with Django's ModelBase."""
 

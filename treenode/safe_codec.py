@@ -28,15 +28,15 @@ class FieldCodec(Protocol):
     def decode(self, value: JsonValue) -> object: ...
 
 
-def _codec_state(value: object) -> JsonValue:
+def _codec_state(value: object, *, root: bool = False) -> JsonValue:
     if value is None or type(value) in (bool, int, float, str):
         return value
     if isinstance(value, type):
         return f"{value.__module__}.{value.__qualname__}"
-    if isinstance(value, (tuple, list)):
+    if isinstance(value, tuple):
         return [_codec_state(item) for item in value]
     if isinstance(value, dict):
-        if not all(type(key) is str for key in value):
+        if not root or not all(type(key) is str for key in value):
             raise SafeCodecError("codec configuration keys must be strings")
         return {key: _codec_state(item) for key, item in value.items()}
     if all(callable(getattr(value, name, None)) for name in ("validate", "encode", "decode")):
@@ -45,12 +45,49 @@ def _codec_state(value: object) -> JsonValue:
 
 
 def codec_configuration_identity(codec: FieldCodec) -> str:
-    state = _codec_state(vars(codec))
+    slots = getattr(codec.__class__, "__slots__", ())
+    if slots not in ((), None):
+        raise SafeCodecError("codec slots are not supported")
+    for name, value in vars(codec.__class__).items():
+        if name.startswith("__") or callable(value) or isinstance(
+            value, (classmethod, staticmethod, property)
+        ):
+            continue
+        if isinstance(value, (bytearray, dict, list, set)):
+            raise SafeCodecError("codec class configuration is mutable")
+    try:
+        state = _codec_state(vars(codec), root=True)
+    except TypeError as exc:
+        raise SafeCodecError("codec configuration is not inspectable") from exc
     payload = {
         "class": f"{codec.__class__.__module__}.{codec.__class__.__qualname__}",
         "state": state,
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+@dataclass(frozen=True)
+class VerifiedFieldCodec:
+    codec: FieldCodec
+    identity: str
+
+    def _verified(self) -> FieldCodec:
+        if codec_configuration_identity(self.codec) != self.identity:
+            raise SafeCodecError("codec configuration changed after registration")
+        return self.codec
+
+    def validate(self, field: models.Field) -> None:
+        self._verified().validate(field)
+
+    def encode(self, value: object) -> JsonValue:
+        return self._verified().encode(value)
+
+    def decode(self, value: JsonValue) -> object:
+        return self._verified().decode(value)
+
+
+def verify_field_codec(codec: FieldCodec) -> VerifiedFieldCodec:
+    return VerifiedFieldCodec(codec=codec, identity=codec_configuration_identity(codec))
 
 
 @dataclass(frozen=True)

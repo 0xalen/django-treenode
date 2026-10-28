@@ -146,6 +146,64 @@ class SafeCodecUnitTests(unittest.TestCase):
         with self.assertRaises(SafeCodecError):
             StringCodec().validate(CustomCharField())
 
+    def test_mutable_and_slots_custom_codecs_are_rejected(self):
+        class MutableClassCodec:
+            options = []
+
+            def validate(self, field):
+                StringCodec().validate(field)
+
+            def encode(self, value):
+                return value
+
+            def decode(self, value):
+                return value
+
+        class SlotsCodec:
+            __slots__ = ("mode",)
+
+            def validate(self, field):
+                StringCodec().validate(field)
+
+            def encode(self, value):
+                return value
+
+            def decode(self, value):
+                return value
+
+        for codec in (MutableClassCodec(), SlotsCodec()):
+            fields = default_field_codecs(Category)
+            fields["name"] = codec
+            with self.assertRaises(SafeRegistrationError):
+                register_safe_model(Category, fields=fields)
+
+    def test_post_registration_codec_mutation_cannot_change_decode_or_fingerprint(self):
+        class StatefulCodec:
+            def __init__(self):
+                self.mode = "registered"
+
+            def validate(self, field):
+                StringCodec().validate(field)
+
+            def encode(self, value):
+                return f"{self.mode}:{value}"
+
+            def decode(self, value):
+                return value.removeprefix(f"{self.mode}:")
+
+        codec = StatefulCodec()
+        fields = default_field_codecs(Category)
+        fields["name"] = codec
+        register_safe_model(Category, fields=fields)
+        raw = encode_snapshot(Category, "default", 1, (Category(pk=1, name="node"),))
+        fingerprint = get_safe_model_registration(Category).schema_fingerprint
+
+        codec.mode = "mutated"
+
+        self.assertEqual(get_safe_model_registration(Category).schema_fingerprint, fingerprint)
+        with self.assertRaises(SafeCodecError):
+            decode_snapshot(Category, "default", 1, raw)
+
     def test_registration_canonicalizes_concrete_model(self):
         self.register(Category)
         self.assertIs(get_safe_model_registration(Category).model, Category)

@@ -1,10 +1,12 @@
 from django.test import TestCase, override_settings
 
-from tests.models import Category
+from tests.models import Category, CategoryOwner
+from treenode.exceptions import SafeRegistrationError
 from treenode.memory import clear_refs, get_refs
 from treenode.safe_codec import decode_snapshot, default_field_codecs, encode_snapshot
 from treenode.safe_registry import register_safe_model
 import treenode.safe_registry as safe_registry
+from unittest.mock import patch
 
 
 LIMITS = {
@@ -38,3 +40,13 @@ class MaterializationIntegrationTests(TestCase):
         self.assertNotIn("tn_parent", decoded_child.__dict__)
         self.assertIn(decoded_parent, get_refs(Category))
         self.assertIn(decoded_child, get_refs(Category))
+
+    def test_related_owner_cross_alias_is_rejected(self):
+        def write_alias(model, **kwargs):
+            return "replica" if model is CategoryOwner else "default"
+
+        with patch("treenode.safe_registry.router.db_for_write", side_effect=write_alias), patch(
+            "treenode.safe_registry.router.allow_migrate", return_value=True
+        ):
+            with self.assertRaises(SafeRegistrationError):
+                register_safe_model(Category, fields=default_field_codecs(Category))

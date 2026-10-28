@@ -8,6 +8,12 @@ router migration policy without opening a database connection. A missing or
 incompatible field, custom model `from_db()`, or router policy rejects registration.
 Codec identity is the codec class plus canonical configuration, so equivalent
 fresh codec instances are idempotent while differently configured instances fail.
+Registered codecs are wrapped with their verified identity and fail closed if their
+configuration changes. Mutable or hidden codec configuration is rejected.
+
+Reachable related deletion policies must use a known Django policy and share the
+registered model's static write and migration alias. This prevents cross-alias
+related deletion from becoming an unowned revision path.
 
 Rejected: serializing model instances or querysets. Their object behavior and
 Django-version coupling make a closed data boundary impossible.

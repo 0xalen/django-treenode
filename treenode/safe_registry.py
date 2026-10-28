@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.db import router
+from django.db.models import CASCADE, SET_DEFAULT, SET_NULL
 
 from treenode.exceptions import SafeRegistrationError
 
@@ -58,10 +59,39 @@ def _validate_router(model: type) -> str:
     return alias
 
 
+def _is_supported_on_delete(handler: object) -> bool:
+    if handler in (CASCADE, SET_NULL, SET_DEFAULT):
+        return True
+    return (
+        callable(handler)
+        and getattr(handler, "__module__", "") == "django.db.models.deletion"
+        and getattr(handler, "__name__", "") == "set_on_delete"
+        and getattr(handler, "lazy_sub_objs", False)
+    )
+
+
+def _validate_related_routing(model: type, alias: str) -> None:
+    for relation in model._meta.related_objects:
+        field = relation.field
+        if not _is_supported_on_delete(field.remote_field.on_delete):
+            raise SafeRegistrationError("related deletion policy is not supported")
+        source = relation.related_model._meta.concrete_model
+        source_alias = router.db_for_write(source)
+        if source_alias != alias:
+            raise SafeRegistrationError("related model routes to a different alias")
+        if not router.allow_migrate(
+            alias,
+            source._meta.app_label,
+            model_name=source._meta.model_name,
+            model=source,
+        ):
+            raise SafeRegistrationError("router disallows the related model migration")
+
+
 def _validate_fields(
     model: type, fields: Mapping[str, FieldCodec]
 ) -> tuple[tuple[tuple[str, FieldCodec], ...], tuple[tuple[str, str], ...]]:
-    from treenode.safe_codec import codec_configuration_identity
+    from treenode.safe_codec import codec_configuration_identity, verify_field_codec
 
     if not isinstance(fields, Mapping):
         raise SafeRegistrationError("fields must be a mapping")
@@ -79,13 +109,14 @@ def _validate_fields(
             codec.validate(field)
         except Exception as exc:
             raise SafeRegistrationError(f"field {field.attname} is not admissible") from exc
-        validated.append((field.attname, codec))
         try:
-            identities.append((field.attname, codec_configuration_identity(codec)))
+            verified = verify_field_codec(codec)
         except Exception as exc:
             raise SafeRegistrationError(
                 f"field {field.attname} has no canonical codec configuration"
             ) from exc
+        validated.append((field.attname, verified))
+        identities.append((field.attname, verified.identity))
     return tuple(validated), tuple(identities)
 
 
@@ -100,6 +131,7 @@ def register_safe_model(model: type, *, fields: Mapping[str, FieldCodec]) -> Non
     ):
         raise SafeRegistrationError("custom model from_db is not supported")
     alias = _validate_router(concrete)
+    _validate_related_routing(concrete, alias)
     validated_fields, field_identities = _validate_fields(concrete, fields)
     registration = SafeModelRegistration(
         model=concrete,

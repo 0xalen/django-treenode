@@ -138,6 +138,13 @@ Repeating registration with equivalent codec classes and configuration is
 idempotent. A different codec class or canonical codec configuration for a field
 is rejected.
 
+Codec configuration must be inspectable and immutable. Mutable instance or class
+configuration, slots that hide configuration, and configuration changes after
+registration fail closed before values are encoded or decoded. Related models that
+can change a registered tree through supported deletion policies must statically
+route and migrate on the same alias; unknown policies or cross-alias relations are
+rejected.
+
 The codec emits and accepts only its versioned bounded JSON snapshot format. It
 does not read cache entries or enable shared cache reads. Raw SQL, direct bulk
 updates, private queryset deletion, and external writers remain outside any future
