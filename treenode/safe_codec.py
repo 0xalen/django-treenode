@@ -48,19 +48,28 @@ def codec_configuration_identity(codec: FieldCodec) -> str:
     slots = getattr(codec.__class__, "__slots__", ())
     if slots not in ((), None):
         raise SafeCodecError("codec slots are not supported")
-    for name, value in vars(codec.__class__).items():
-        if name.startswith("__") or callable(value) or isinstance(
-            value, (classmethod, staticmethod, property)
-        ):
-            continue
-        if isinstance(value, (bytearray, dict, list, set)):
-            raise SafeCodecError("codec class configuration is mutable")
+    class_state = {}
+    for cls in codec.__class__.__mro__:
+        if cls is object:
+            break
+        for name, value in vars(cls).items():
+            if name.startswith("__") or callable(value) or isinstance(
+                value, (classmethod, staticmethod, property)
+            ):
+                continue
+            try:
+                class_state[f"{cls.__module__}.{cls.__qualname__}.{name}"] = _codec_state(
+                    value
+                )
+            except SafeCodecError as exc:
+                raise SafeCodecError("codec class configuration is mutable") from exc
     try:
         state = _codec_state(vars(codec), root=True)
     except TypeError as exc:
         raise SafeCodecError("codec configuration is not inspectable") from exc
     payload = {
         "class": f"{codec.__class__.__module__}.{codec.__class__.__qualname__}",
+        "class_state": class_state,
         "state": state,
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)

@@ -77,6 +77,18 @@ class CategoryOwner(models.Model):
         app_label = "tests"
 
 
+class CategoryWithOwner(TreeNodeModel):
+    treenode_display_field = "name"
+
+    name = models.CharField(max_length=50, unique=True)
+    owner = models.ForeignKey(CategoryOwner, null=True, on_delete=models.SET_NULL)
+
+    class Meta(TreeNodeModel.Meta):
+        app_label = "tests"
+        verbose_name = "Category With Owner"
+        verbose_name_plural = "Categories With Owner"
+
+
 class _ABCMetaModelBase(ABCMeta, ModelBase):
     """Metaclass combining Python's ABCMeta with Django's ModelBase."""
 

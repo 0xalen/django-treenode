@@ -1,6 +1,6 @@
 from django.test import TestCase, override_settings
 
-from tests.models import Category, CategoryOwner
+from tests.models import Category, CategoryOwner, CategoryWithOwner
 from treenode.exceptions import SafeRegistrationError
 from treenode.memory import clear_refs, get_refs
 from treenode.safe_codec import decode_snapshot, default_field_codecs, encode_snapshot
@@ -50,3 +50,20 @@ class MaterializationIntegrationTests(TestCase):
         ):
             with self.assertRaises(SafeRegistrationError):
                 register_safe_model(Category, fields=default_field_codecs(Category))
+
+    def test_forward_owner_set_null_requires_local_alias(self):
+        with patch("treenode.safe_registry.router.db_for_write", return_value="default"), patch(
+            "treenode.safe_registry.router.allow_migrate", return_value=True
+        ):
+            register_safe_model(CategoryWithOwner, fields=default_field_codecs(CategoryWithOwner))
+
+        safe_registry._registrations.pop(CategoryWithOwner._meta.label_lower)
+
+        def write_alias(model, **kwargs):
+            return "replica" if model is CategoryOwner else "default"
+
+        with patch("treenode.safe_registry.router.db_for_write", side_effect=write_alias), patch(
+            "treenode.safe_registry.router.allow_migrate", return_value=True
+        ):
+            with self.assertRaises(SafeRegistrationError):
+                register_safe_model(CategoryWithOwner, fields=default_field_codecs(CategoryWithOwner))

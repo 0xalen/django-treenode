@@ -177,6 +177,24 @@ class SafeCodecUnitTests(unittest.TestCase):
             with self.assertRaises(SafeRegistrationError):
                 register_safe_model(Category, fields=fields)
 
+    def test_nested_tuple_list_custom_codec_configuration_is_rejected(self):
+        class NestedMutableCodec:
+            configuration = ("stable", ["mutable"])
+
+            def validate(self, field):
+                StringCodec().validate(field)
+
+            def encode(self, value):
+                return value
+
+            def decode(self, value):
+                return value
+
+        fields = default_field_codecs(Category)
+        fields["name"] = NestedMutableCodec()
+        with self.assertRaises(SafeRegistrationError):
+            register_safe_model(Category, fields=fields)
+
     def test_post_registration_codec_mutation_cannot_change_decode_or_fingerprint(self):
         class StatefulCodec:
             def __init__(self):

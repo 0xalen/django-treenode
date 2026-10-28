@@ -139,11 +139,12 @@ idempotent. A different codec class or canonical codec configuration for a field
 is rejected.
 
 Codec configuration must be inspectable and immutable. Mutable instance or class
-configuration, slots that hide configuration, and configuration changes after
-registration fail closed before values are encoded or decoded. Related models that
-can change a registered tree through supported deletion policies must statically
-route and migrate on the same alias; unknown policies or cross-alias relations are
-rejected.
+configuration at any nesting depth, slots that hide configuration, and
+configuration changes after registration fail closed before values are encoded or
+decoded. Related models that can change a registered tree through supported deletion
+policies, including owner models referenced by a tree's forward foreign keys, must
+statically route and migrate on the same alias. Valid local owner relations remain
+supported; unknown policies or cross-alias relations are rejected.
 
 The codec emits and accepts only its versioned bounded JSON snapshot format. It
 does not read cache entries or enable shared cache reads. Raw SQL, direct bulk
