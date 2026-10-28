@@ -163,6 +163,10 @@ with Category.tree_mutation(using="default"):
 Registered instance saves, deletes, reparenting, and priority updates validate the
 router-selected instance alias before row SQL. Fixture imports must run inside the
 matching `tree_mutation()` context. Unregistered models retain existing behavior.
+Before related-owner deletion SQL, every affected registered tree relation validates
+both the owner instance-hint route and the queryset-origin alias against the
+registered tree alias. A mismatch raises `SafeRoutingError` before `SET_NULL`,
+`SET_DEFAULT`, or cascading SQL can mutate a registered tree without its revision.
 On SQLite and PostgreSQL, a single database upsert creates or increments the first
 revision row, so concurrent committed mutations receive distinct revisions without
 a client-side retry loop.

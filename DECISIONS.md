@@ -40,4 +40,14 @@ This serializes concurrent first writers without a client-side retry loop. Lock
 contention may still abort a transaction before it commits; it never represents a
 successful supported mutation.
 
+Related-owner deletion validates both the owner model's instance-hint route and the
+collector's queryset-origin alias for each affected active registered tree relation.
+The check runs before collector field-update SQL, so an alias mismatch raises
+`SafeRoutingError` rather than silently applying a cross-alias `SET_NULL` or
+`SET_DEFAULT` without a revision.
+
+Rejected: treating a related alias mismatch as an inactive relation. The database
+collector can still apply its field update on the deletion alias, leaving a
+registered tree mutation unowned.
+
 See docs/adr/002_revision_ownership.md.

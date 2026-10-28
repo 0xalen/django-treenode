@@ -81,6 +81,19 @@ def _coherence_writer(database_name, ready, release, results):
         results.put(("error", type(exc).__name__, str(exc)))
 
 
+def _committed_mutation_writer(database_name, ready, commit, results):
+    try:
+        Category = _setup_worker(database_name)
+        ready.set()
+        if not commit.wait(15):
+            raise RuntimeError("committed-write barrier timed out")
+        Category(name="postgres-bracket-write").save()
+        results.put(("ok",))
+    except Exception as exc:
+        ready.set()
+        results.put(("error", type(exc).__name__, str(exc)))
+
+
 class PostgreSQLRevisionConcurrencyTests(TransactionTestCase):
     @classmethod
     def setUpClass(cls):
@@ -158,36 +171,37 @@ class PostgreSQLRevisionConcurrencyTests(TransactionTestCase):
 
     def test_revision_rows_stable_under_concurrent_commit_postgres(self):
         ready = self.context.Event()
-        release = self.context.Event()
+        commit = self.context.Event()
         results = self.context.Queue()
         worker = self.context.Process(
-            target=_coherence_writer, args=(self.database_name, ready, release, results)
+            target=_committed_mutation_writer, args=(self.database_name, ready, commit, results)
         )
         worker.start()
-        self.assertTrue(ready.wait(20), "writer failed to reach coherence barrier")
+        self.assertTrue(ready.wait(20), "writer failed to reach commit barrier")
         from django.db import connections
 
         reader = connections["default"].copy(alias="postgres_coherence_reader")
         try:
             reader.ensure_connection()
             with reader.cursor() as cursor:
-                cursor.execute("SELECT COUNT(*) FROM tests_category WHERE name = %s", ["postgres-coherence"])
-                self.assertEqual(cursor.fetchone()[0], 0)
                 cursor.execute(
                     "SELECT revision FROM treenode_treenodecacherevision WHERE model_label = %s",
                     ["tests.category"],
                 )
-                self.assertIsNone(cursor.fetchone())
+                r1 = cursor.fetchone()
+                cursor.execute("SELECT COUNT(*) FROM tests_category WHERE name = %s", ["postgres-bracket-write"])
+                self.assertEqual(cursor.fetchone()[0], 0)
+                commit.set()
+                self.assertEqual(self._result(results), ("ok",))
+                cursor.execute(
+                    "SELECT revision FROM treenode_treenodecacherevision WHERE model_label = %s",
+                    ["tests.category"],
+                )
+                r2 = cursor.fetchone()
+                self.assertNotEqual(r1, r2)
+                cursor.execute("SELECT COUNT(*) FROM tests_category WHERE name = %s", ["postgres-bracket-write"])
+                self.assertEqual(cursor.fetchone()[0], 1)
         finally:
             reader.close()
-            release.set()
-        self.assertEqual(self._result(results), ("ok",))
+            commit.set()
         self._join([worker])
-        from tests.models import Category
-        from treenode.models import TreeNodeCacheRevision
-
-        self.assertEqual(Category.objects.filter(name="postgres-coherence").count(), 1)
-        self.assertEqual(
-            TreeNodeCacheRevision.objects.get(model_label=Category._meta.label_lower).revision,
-            1,
-        )

@@ -12,7 +12,10 @@ DO UPDATE ... RETURNING` statement. The database serializes concurrent first-row
 creation without a retry loop in application code.
 
 Instance write entrypoints check the router alias before SQL. Queryset deletion and
-related owner deletion use synchronous signals in Django's delete transaction.
+related owner deletion use synchronous signals in Django's delete transaction. For
+each registered tree relation affected by an owner delete, the owner instance-hint
+route, collector queryset-origin alias, and registered tree alias must agree before
+collector field-update SQL runs.
 Supported bulk writes use the public tree_mutation context manager.
 
 ## Rejected approaches
@@ -20,6 +23,9 @@ Supported bulk writes use the public tree_mutation context manager.
 Post-commit cache invalidation was rejected because a process failure after commit
 can leave an accepted stale value. Global signal suppression was rejected for active
 mutations because it can skip required ownership work.
+Ignoring a related-owner alias mismatch was rejected because Django can apply its
+foreign-key field update on the deletion alias without invoking the tree model's
+write entrypoint.
 
 ## Consequences
 

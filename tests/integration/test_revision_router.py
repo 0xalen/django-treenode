@@ -5,7 +5,7 @@ from unittest.mock import patch
 from django.db import connections
 from django.test import TransactionTestCase
 
-from tests.models import Category
+from tests.models import Category, CategoryOwner, CategoryWithOwner
 from treenode.exceptions import SafeRegistrationError, SafeRoutingError
 from treenode.models import TreeNodeCacheRevision
 from treenode.revision import (
@@ -43,12 +43,12 @@ class RevisionRouterIntegrationTests(TransactionTestCase):
         self._clear_revision_test_state()
         install_revision_lifecycle()
 
-    def _register(self, route, allow_migrate=lambda *args, **kwargs: True):
+    def _register(self, route, allow_migrate=lambda *args, **kwargs: True, model=Category):
         with patch("django.db.router.db_for_write", side_effect=route), patch(
             "django.db.router.allow_migrate", side_effect=allow_migrate
         ):
-            register_safe_model(Category, fields=default_field_codecs(Category))
-        return safe_registry.get_safe_model_registration(Category)
+            register_safe_model(model, fields=default_field_codecs(model))
+        return safe_registry.get_safe_model_registration(model)
 
     def test_router_routes_revision_and_tree_together(self):
         registration = self._register(lambda model, **hints: "default")
@@ -106,3 +106,27 @@ class RevisionRouterIntegrationTests(TransactionTestCase):
 
         self.assertTrue(activate_registration(registration))
         self.assertEqual(get_revision_status(Category).state, "active")
+
+    def test_related_owner_instance_hint_mismatch_rejects_instance_and_queryset_delete(self):
+        registration = self._register(
+            lambda model, **hints: "default", model=CategoryWithOwner
+        )
+        self.assertTrue(activate_registration(registration))
+        owners = []
+        for path in ("instance", "queryset"):
+            owner = CategoryOwner.objects.create(
+                category=Category.objects.create(name=f"owner-route-{path}")
+            )
+            CategoryWithOwner(name=f"tree-route-{path}", owner=owner).save()
+            owners.append(owner)
+
+        def route(model, **hints):
+            return "revision" if hints.get("instance") in owners else "default"
+
+        with patch("django.db.router.db_for_write", side_effect=route):
+            with self.assertRaises(SafeRoutingError):
+                owners[0].delete()
+            with self.assertRaises(SafeRoutingError):
+                CategoryOwner.objects.filter(pk=owners[1].pk).delete()
+        self.assertEqual(CategoryOwner.objects.filter(pk__in=[owner.pk for owner in owners]).count(), 2)
+        self.assertEqual(CategoryWithOwner.objects.count(), 2)

@@ -73,6 +73,23 @@ def _immediate_writer(database_path, ready, release, results):
         connection.close()
 
 
+def _revision_writer(database_path, started, results):
+    connection = sqlite3.connect(database_path, timeout=0.05, isolation_level=None)
+    try:
+        started.set()
+        connection.execute("BEGIN IMMEDIATE")
+        connection.execute(
+            "UPDATE treenode_treenodecacherevision SET revision = revision + 1 "
+            "WHERE model_label = 'tests.category'"
+        )
+        connection.execute("COMMIT")
+        results.put(("ok",))
+    except Exception as exc:
+        results.put(("error", type(exc).__name__, str(exc)))
+    finally:
+        connection.close()
+
+
 class SQLiteRevisionConcurrencyTests(TransactionTestCase):
     @classmethod
     def setUpClass(cls):
@@ -141,39 +158,40 @@ class SQLiteRevisionConcurrencyTests(TransactionTestCase):
         self.assertFalse(worker.is_alive(), "writer did not exit")
 
     def test_revision_rows_are_coherent_across_processes(self):
-        ready = self.context.Event()
-        release = self.context.Event()
+        seed = sqlite3.connect(self.database_path)
+        try:
+            seed.execute(
+                "INSERT INTO treenode_treenodecacherevision (model_label, revision) "
+                "VALUES ('tests.category', 0)"
+            )
+            seed.commit()
+        finally:
+            seed.close()
+        started = self.context.Event()
         results = self.context.Queue()
         worker = self.context.Process(
-            target=_coherence_writer, args=(self.database_path, ready, release, results)
+            target=_revision_writer, args=(self.database_path, started, results)
         )
-        worker.start()
-        self.assertTrue(ready.wait(15), "writer did not reach coherence barrier")
         reader = sqlite3.connect(self.database_path, timeout=1, isolation_level=None)
         try:
-            row_count = reader.execute("SELECT COUNT(*) FROM tests_category WHERE name = 'coherence-writer'").fetchone()[0]
-            revision = reader.execute(
+            reader.execute("BEGIN IMMEDIATE")
+            r1 = reader.execute(
                 "SELECT revision FROM treenode_treenodecacherevision WHERE model_label = 'tests.category'"
             ).fetchone()
-            self.assertEqual(row_count, 0)
-            self.assertIsNone(revision)
+            rows = reader.execute("SELECT COUNT(*) FROM tests_category").fetchone()[0]
+            worker.start()
+            self.assertTrue(started.wait(15), "writer did not start")
+            outcome = self._result(results)
+            self.assertEqual(outcome[0], "error", outcome)
+            self.assertEqual(outcome[1], "OperationalError", outcome)
+            self.assertIn("locked", outcome[2], outcome)
+            r2 = reader.execute(
+                "SELECT revision FROM treenode_treenodecacherevision WHERE model_label = 'tests.category'"
+            ).fetchone()
+            self.assertEqual(r1, r2)
+            self.assertEqual(rows, reader.execute("SELECT COUNT(*) FROM tests_category").fetchone()[0])
         finally:
+            reader.execute("COMMIT")
             reader.close()
-            release.set()
-        self.assertEqual(self._result(results), ("ok",))
         worker.join(15)
         self.assertFalse(worker.is_alive(), "coherence writer did not exit")
-        reader = sqlite3.connect(self.database_path)
-        try:
-            self.assertEqual(
-                reader.execute("SELECT COUNT(*) FROM tests_category WHERE name = 'coherence-writer'").fetchone()[0],
-                1,
-            )
-            self.assertEqual(
-                reader.execute(
-                    "SELECT revision FROM treenode_treenodecacherevision WHERE model_label = 'tests.category'"
-                ).fetchone()[0],
-                1,
-            )
-        finally:
-            reader.close()

@@ -173,13 +173,28 @@ def tree_mutation(model: type, *, using: str | None = None):
         advance_revision(registration.model, alias)
 
 
-def handle_related_delete(sender, instance, using: str) -> None:
+def _related_tree_registrations(sender, instance, using: str):
+    source_alias = router.db_for_write(sender, instance=instance)
+    registrations = []
     for relation in sender._meta.related_objects:
         field = relation.field
         model = relation.related_model
         registration = get_active_registration(model)
-        if not registration or registration.alias != using:
+        if not registration:
             continue
+        target_alias = router.db_for_write(registration.model, instance=instance)
+        if (
+            source_alias != using
+            or target_alias != using
+            or registration.alias != using
+        ):
+            raise SafeRoutingError("related deletion alias differs from registered alias")
+        registrations.append((field, registration))
+    return registrations
+
+
+def handle_related_delete(sender, instance, using: str) -> None:
+    for field, registration in _related_tree_registrations(sender, instance, using):
         if field.remote_field.on_delete.__name__ in {"SET_NULL", "SET_DEFAULT", "set_on_delete"}:
             with mutation_scope(registration.model, using):
                 advance_revision(registration.model, using)
