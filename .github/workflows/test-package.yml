@@ -68,6 +68,11 @@ jobs:
         include: ${{fromJson(needs.prepare.outputs.matrix)}}
 
     services:
+      redis:
+        image: redis:7.4.2-alpine
+        ports:
+          - 6379:6379
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
       postgres:
         image: postgres:latest
         env:
@@ -102,6 +107,7 @@ jobs:
 
     - name: Install requirements
       run: |
+        pip install -e ".[redis]"
         pip install -r requirements.txt
         pip install -r requirements-test.txt
 

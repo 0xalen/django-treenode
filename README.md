@@ -171,6 +171,36 @@ On SQLite and PostgreSQL, a single database upsert creates or increments the fir
 revision row, so concurrent committed mutations receive distinct revisions without
 a client-side retry loop.
 
+### Safe cache backends
+
+`SafeMemoryCache` is a single-process backend for development and tests.
+`SafeRedisCache` is a shared backend installed with `django-treenode[redis]`.
+Both accept only exact `None`, booleans, signed 64-bit integers, finite floats,
+strings, bytes, and bounded nested lists, tuples, and dictionaries with string keys.
+They encode every non-counter value as validated JSON data and never pickle values.
+
+```python
+CACHES = {
+    "safe": {
+        "BACKEND": "treenode.backends.redis.SafeRedisCache",
+        "LOCATION": "rediss://cache.example:6379/0",
+        "KEY_PREFIX": "my-service",
+        "OPTIONS": {
+            "NAMESPACE": "my-service-safe-v1",
+            "MAX_VALUE_BYTES": 1048576,
+            "MAX_VALUE_DEPTH": 16,
+            "MAX_VALUE_ITEMS": 10000,
+        },
+    },
+}
+```
+
+Use a unique `NAMESPACE` per cache alias. `clear()` scans and deletes only that
+namespace, never flushes the Redis database. Counters use native Redis integer
+operations and remain atomic. Malformed stored data is treated as a cache miss and
+is not deleted, so it cannot remove a concurrent repair. Connection failures are
+reported by the backend; they are not converted into unsafe fallback values.
+
 ## Usage
 
 ### Methods/Properties

@@ -51,3 +51,18 @@ collector can still apply its field update on the deletion alias, leaving a
 registered tree mutation unowned.
 
 See docs/adr/002_revision_ownership.md.
+
+## Safe cache transports
+
+Safe cache backends use a closed tagged JSON encoding for values and raw signed
+64-bit decimal values only for native counters. Decoding accepts only that grammar;
+malformed data is a miss and remains untouched. Redis clears by a required unique
+namespace prefix rather than database flush. The memory backend is intentionally
+process-local.
+
+Rejected: adapting Django's pickle cache serializer. Its deserialization boundary
+accepts arbitrary object behavior and cannot satisfy a closed cache value domain.
+The unavailable Django 6.1 Trove classifier is omitted from package metadata so
+sdist and wheel validation can complete; compatibility remains exercised by CI.
+
+See docs/adr/003_safe_cache_transports.md.

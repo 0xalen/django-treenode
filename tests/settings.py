@@ -111,3 +111,23 @@ CACHES = {
         "TIMEOUT": 60,
     },
 }
+
+if os.environ.get("TREENODE_TEST_REDIS_URL"):
+    CACHES["safe_memory"] = {
+        "BACKEND": "treenode.backends.memory.SafeMemoryCache",
+        "LOCATION": "safe-memory-tests",
+        "KEY_PREFIX": "safe-memory-tests",
+        "OPTIONS": {"NAMESPACE": "safe-memory-tests"},
+    }
+    CACHES["safe_redis"] = {
+        "BACKEND": "treenode.backends.redis.SafeRedisCache",
+        "LOCATION": os.environ["TREENODE_TEST_REDIS_URL"],
+        "KEY_PREFIX": "safe-redis-tests",
+        "OPTIONS": {"NAMESPACE": "safe-redis-tests", "socket_connect_timeout": 1},
+    }
+    CACHES["safe_redis_other"] = {
+        "BACKEND": "treenode.backends.redis.SafeRedisCache",
+        "LOCATION": os.environ["TREENODE_TEST_REDIS_URL"],
+        "KEY_PREFIX": "safe-redis-other-tests",
+        "OPTIONS": {"NAMESPACE": "safe-redis-other-tests", "socket_connect_timeout": 1},
+    }
