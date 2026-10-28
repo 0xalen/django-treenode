@@ -201,6 +201,12 @@ operations and remain atomic. Malformed stored data is treated as a cache miss a
 is not deleted, so it cannot remove a concurrent repair. Connection failures are
 reported by the backend; they are not converted into unsafe fallback values.
 
+CI validates Redis over both plaintext and TLS. The TLS endpoint uses an ephemeral
+CI-only certificate and CA, requires certificate validation and hostname checking,
+waits for Docker health events, and is removed after the test job. Deployment
+certificates and connection settings remain application configuration, not package
+artifacts.
+
 ## Usage
 
 ### Methods/Properties

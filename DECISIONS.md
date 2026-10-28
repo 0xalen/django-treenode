@@ -64,5 +64,9 @@ Rejected: adapting Django's pickle cache serializer. Its deserialization boundar
 accepts arbitrary object behavior and cannot satisfy a closed cache value domain.
 The unavailable Django 6.1 Trove classifier is omitted from package metadata so
 sdist and wheel validation can complete; compatibility remains exercised by CI.
+CI provisions a short-lived Redis TLS endpoint with a job-local CA. It validates
+certificate and hostname failure behavior without placing credentials in the
+repository or release artifact. Docker health events gate test execution without
+polling or a fixed delay.
 
 See docs/adr/003_safe_cache_transports.md.

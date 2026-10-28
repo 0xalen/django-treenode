@@ -23,3 +23,8 @@ write counter arithmetic was rejected because it loses Redis atomicity.
 SafeMemoryCache is process-local. SafeRedisCache requires the optional redis-py
 dependency and propagates connection errors. A later revision-checked tree cache
 may use these transports but is not enabled by them.
+
+CI creates a disposable TLS Redis endpoint with a job-local certificate authority.
+The TLS integration gate requires verified certificate and hostname behavior; its
+credentials are removed when the job completes. Docker health events, including an
+already-healthy check, gate test execution without a fixed delay.

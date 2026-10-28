@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -   Serialize concurrent first revision increments with a database upsert.
 -   Reject related-owner deletions whose instance or queryset route differs from a registered tree alias.
 -   Add safe memory and Redis cache backends with bounded non-pickle values.
+-   Validate Redis TLS cache transport in CI with ephemeral credentials.
 
 ## [0.25.0](https://github.com/fabiocaccamo/django-treenode/releases/tag/0.25.0) - 2026-08-26
 -   Add `Django 6.1` support.

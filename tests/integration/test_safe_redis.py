@@ -93,7 +93,8 @@ class SafeRedisCacheIntegrationTests(SimpleTestCase):
         self.assertIn("Connection", type(error.exception).__name__)
 
     def test_positive_timeout_expires_by_monotonic_deadline(self):
-        self.cache.set("positive-ttl", "value", timeout=1)
+        self.assertTrue(self.cache.set("positive-ttl", "value", timeout=1))
+        self.assertEqual(self.cache.get("positive-ttl"), "value")
         deadline = time.monotonic() + 3
         waiter = threading.Event()
         while self.cache.get("positive-ttl") is not None and time.monotonic() < deadline:
@@ -103,6 +104,8 @@ class SafeRedisCacheIntegrationTests(SimpleTestCase):
 
     def test_tls_handshake_and_certificate_fail_closed(self):
         if "safe_redis_tls" not in caches:
+            if os.environ.get("TREENODE_REQUIRE_REDIS_TLS") == "1":
+                self.fail("TREENODE_REQUIRE_REDIS_TLS requires configured safe_redis_tls alias")
             raise unittest.SkipTest("requires TLS Redis URL and CA")
         tls = caches["safe_redis_tls"]
         tls.clear()

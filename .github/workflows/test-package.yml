@@ -88,6 +88,47 @@ jobs:
 
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+    - name: Start TLS Redis
+      run: |
+        tls_dir="$RUNNER_TEMP/treenode-redis-tls"
+        umask 077
+        mkdir -p "$tls_dir"
+        openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+          -subj "/CN=localhost" \
+          -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
+          -keyout "$tls_dir/key.pem" \
+          -out "$tls_dir/ca.pem"
+        cp "$tls_dir/ca.pem" "$tls_dir/cert.pem"
+        chmod 755 "$tls_dir"
+        chmod 644 "$tls_dir/ca.pem" "$tls_dir/cert.pem" "$tls_dir/key.pem"
+        readiness_file="$RUNNER_TEMP/treenode-redis-tls-ready"
+        timeout 30s sh -c '
+          docker events --filter type=container \
+            --filter container=treenode-redis-tls \
+            --filter event=health_status \
+            --format "{{.Status}}" | grep -m1 -Fx "health_status: healthy"
+        ' > "$readiness_file" &
+        readiness_pid=$!
+        docker run --detach --name treenode-redis-tls \
+          --publish 6380:6379 \
+          --mount "type=bind,src=$tls_dir,dst=/tls,readonly" \
+          --health-cmd "redis-cli --tls --cacert /tls/ca.pem -h 127.0.0.1 -p 6379 ping" \
+          --health-interval 1s --health-timeout 5s --health-retries 20 \
+          redis:7.4.2-alpine redis-server --port 0 --tls-port 6379 \
+          --tls-cert-file /tls/cert.pem --tls-key-file /tls/key.pem \
+          --tls-ca-cert-file /tls/ca.pem --tls-auth-clients no
+        if [ "$(docker inspect -f "{{.State.Health.Status}}" treenode-redis-tls)" != healthy ] && ! wait "$readiness_pid"; then
+          docker logs treenode-redis-tls
+          exit 1
+        fi
+        kill "$readiness_pid" 2>/dev/null || true
+        wait "$readiness_pid" 2>/dev/null || true
+        rm -f "$readiness_file"
+        if [ "$(docker inspect -f "{{.State.Health.Status}}" treenode-redis-tls)" != healthy ]; then
+          docker logs treenode-redis-tls
+          exit 1
+        fi
+
     - name: Install psycopg2 prerequisites
       run: sudo apt-get install libpq-dev
 
@@ -118,10 +159,21 @@ jobs:
     - name: Run tests
       env:
         DATABASE_ENGINE: ${{ matrix.database }}
+        TREENODE_TEST_REDIS_URL: redis://127.0.0.1:6379/15
+        TREENODE_TEST_REDIS_TLS_URL: rediss://localhost:6380/15
+        TREENODE_TEST_REDIS_TLS_CA: ${{ runner.temp }}/treenode-redis-tls/ca.pem
+        TREENODE_REQUIRE_REDIS_TLS: "1"
       run: |
         coverage run --append --source=treenode runtests.py
         coverage report --show-missing
         coverage xml -o ./coverage.xml
+
+    - name: Remove TLS Redis credentials
+      if: always()
+      run: |
+        docker rm --force treenode-redis-tls || true
+        rm -rf "$RUNNER_TEMP/treenode-redis-tls"
+        rm -f "$RUNNER_TEMP/treenode-redis-tls-ready"
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
