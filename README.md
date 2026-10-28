@@ -109,6 +109,40 @@ CACHES = {
 }
 ```
 
+### Safe model registration
+
+Safe model registration is opt-in. Register a concrete model after Django has loaded
+applications, with a codec for every persisted field. Registration never opens a
+database connection.
+
+```python
+from treenode.safe_codec import default_field_codecs
+from treenode.safe_registry import register_safe_model
+
+register_safe_model(Category, fields=default_field_codecs(Category))
+```
+
+Set all codec limits explicitly from representative measurements: payload bytes,
+node count, field count, nesting depth, string bytes, and container items. Missing
+or invalid limits reject snapshot encoding and decoding.
+
+Registration accepts only concrete non-proxy `TreeNodeModel` classes with the
+default model `from_db()` implementation. Custom fields require an explicit
+`FieldCodec` whose `validate()`, `encode()`, and `decode()` methods accept that
+exact field behavior. The built-in catalog covers standard Django scalar, date,
+UUID, binary, JSON, and foreign-key values. Unknown or incomplete field mappings,
+custom model materialization, and router configurations that cannot migrate the
+model and revision table to one alias are rejected.
+
+Repeating registration with equivalent codec classes and configuration is
+idempotent. A different codec class or canonical codec configuration for a field
+is rejected.
+
+The codec emits and accepts only its versioned bounded JSON snapshot format. It
+does not read cache entries or enable shared cache reads. Raw SQL, direct bulk
+updates, private queryset deletion, and external writers remain outside any future
+freshness guarantee.
+
 ## Usage
 
 ### Methods/Properties

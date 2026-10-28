@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+-   Add an opt-in closed safe snapshot codec and model registry.
+-   Reject incomplete field registrations, unsafe materialization, and malformed snapshots.
+
 ## [0.25.0](https://github.com/fabiocaccamo/django-treenode/releases/tag/0.25.0) - 2026-08-26
 -   Add `Django 6.1` support.
 -   Drop `Django < 4.2` support. #220
