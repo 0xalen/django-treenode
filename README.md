@@ -147,9 +147,25 @@ statically route and migrate on the same alias. Valid local owner relations rema
 supported; unknown policies or cross-alias relations are rejected.
 
 The codec emits and accepts only its versioned bounded JSON snapshot format. It
-does not read cache entries or enable shared cache reads. Raw SQL, direct bulk
-updates, private queryset deletion, and external writers remain outside any future
-freshness guarantee.
+does not read cache entries or enable shared cache reads. After the revision
+migration has run on the registered alias, registered models activate transactional
+revision ownership. Raw SQL, direct bulk updates, private queryset deletion, and
+external writers remain outside any freshness guarantee.
+
+Use `tree_mutation()` for supported bulk writes. It keeps the writes, tree refresh,
+and revision increment in one database transaction.
+
+```python
+with Category.tree_mutation(using="default"):
+    Category.objects.using("default").filter(...).update(...)
+```
+
+Registered instance saves, deletes, reparenting, and priority updates validate the
+router-selected instance alias before row SQL. Fixture imports must run inside the
+matching `tree_mutation()` context. Unregistered models retain existing behavior.
+On SQLite and PostgreSQL, a single database upsert creates or increments the first
+revision row, so concurrent committed mutations receive distinct revisions without
+a client-side retry loop.
 
 ## Usage
 

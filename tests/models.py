@@ -89,6 +89,56 @@ class CategoryWithOwner(TreeNodeModel):
         verbose_name_plural = "Categories With Owner"
 
 
+class CategoryWithDefaultOwner(TreeNodeModel):
+    treenode_display_field = "name"
+
+    name = models.CharField(max_length=50, unique=True)
+    owner = models.ForeignKey(
+        CategoryOwner, default=1, null=True, on_delete=models.SET_DEFAULT
+    )
+
+    class Meta(TreeNodeModel.Meta):
+        app_label = "tests"
+        verbose_name = "Category With Default Owner"
+        verbose_name_plural = "Categories With Default Owner"
+
+
+class CategoryWithCallableOwner(TreeNodeModel):
+    treenode_display_field = "name"
+
+    name = models.CharField(max_length=50, unique=True)
+    owner = models.ForeignKey(CategoryOwner, null=True, on_delete=models.SET(lambda: 1))
+
+    class Meta(TreeNodeModel.Meta):
+        app_label = "tests"
+        verbose_name = "Category With Callable Owner"
+        verbose_name_plural = "Categories With Callable Owner"
+
+
+class CategoryWithCascadeOwner(TreeNodeModel):
+    treenode_display_field = "name"
+
+    name = models.CharField(max_length=50, unique=True)
+    owner = models.ForeignKey(CategoryOwner, on_delete=models.CASCADE)
+
+    class Meta(TreeNodeModel.Meta):
+        app_label = "tests"
+        verbose_name = "Category With Cascade Owner"
+        verbose_name_plural = "Categories With Cascade Owner"
+
+
+class CategoryWithUnsupportedOwner(TreeNodeModel):
+    treenode_display_field = "name"
+
+    name = models.CharField(max_length=50, unique=True)
+    owner = models.ForeignKey(CategoryOwner, null=True, on_delete=lambda *args, **kwargs: None)
+
+    class Meta(TreeNodeModel.Meta):
+        app_label = "tests"
+        verbose_name = "Category With Unsupported Owner"
+        verbose_name_plural = "Categories With Unsupported Owner"
+
+
 class _ABCMetaModelBase(ABCMeta, ModelBase):
     """Metaclass combining Python's ABCMeta with Django's ModelBase."""
 

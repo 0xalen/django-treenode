@@ -9,10 +9,11 @@ SECRET_KEY = "django-treenode"
 ALLOWED_HOSTS = ["*"]
 
 database_engine = os.environ.get("DATABASE_ENGINE", "sqlite")
+sqlite_test_path = os.environ.get("TREENODE_TEST_SQLITE_PATH")
 database_config = {
     "sqlite": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": ":memory:",
+        "NAME": os.environ.get("TREENODE_TEST_SQLITE_PATH", ":memory:"),
     },
     # 'mysql': {
     #     'ENGINE': 'django.db.backends.mysql',
@@ -32,15 +33,31 @@ database_config = {
     },
 }
 
+if sqlite_test_path:
+    database_config["sqlite"]["TEST"] = {"NAME": sqlite_test_path}
+
 github_workflow = os.environ.get("GITHUB_WORKFLOW")
 if github_workflow:
     database_config["postgres"]["NAME"] = "postgres"
     database_config["postgres"]["HOST"] = "127.0.0.1"
     database_config["postgres"]["PORT"] = "5432"
 
+postgres_test_name = os.environ.get("TREENODE_TEST_POSTGRES_NAME")
+if postgres_test_name:
+    database_config["postgres"]["NAME"] = postgres_test_name
+    database_config["postgres"]["TEST"] = {"NAME": postgres_test_name}
+
 DATABASES = {
     "default": database_config.get(database_engine),
 }
+
+if os.environ.get("TREENODE_TEST_ROUTER_ALIASES"):
+    if database_engine != "sqlite":
+        raise RuntimeError("TREENODE_TEST_ROUTER_ALIASES currently requires SQLite")
+    DATABASES["revision"] = {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": ":memory:",
+    }
 
 INSTALLED_APPS = [
     "django.contrib.admin",

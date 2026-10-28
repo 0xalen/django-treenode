@@ -32,6 +32,15 @@ TN_FIELDS = (
 )
 
 
+class TreeNodeCacheRevision(models.Model):
+    model_label = models.CharField(max_length=255, unique=True)
+    revision = models.PositiveBigIntegerField(default=0)
+
+    class Meta:
+        verbose_name = "Tree node cache revision"
+        verbose_name_plural = "Tree node cache revisions"
+
+
 class TreeNodeModel(models.Model):
     """
     Usage:
@@ -153,7 +162,44 @@ class TreeNodeModel(models.Model):
 
     # Public methods
 
+    def save(self, *args, **kwargs):
+        from treenode.revision import (
+            advance_revision,
+            mutation_owned,
+            mutation_scope,
+            verify_instance_alias,
+        )
+
+        alias = verify_instance_alias(self, kwargs.get("using"))
+        if alias is None:
+            return super().save(*args, **kwargs)
+        kwargs["using"] = alias
+        if mutation_owned(self.__class__):
+            return super().save(*args, **kwargs)
+        with transaction.atomic(using=alias), mutation_scope(self.__class__, alias):
+            result = super().save(*args, **kwargs)
+            self.__class__.update_tree(using=alias)
+            advance_revision(self.__class__, alias)
+            return result
+
     def delete(self, using=None, keep_parents=False, cascade=True):
+        from treenode.revision import (
+            advance_revision,
+            get_active_registration,
+            mutation_scope,
+            verify_instance_alias,
+        )
+
+        registration = get_active_registration(self.__class__)
+        if registration:
+            alias = verify_instance_alias(self, using)
+            with transaction.atomic(using=alias), mutation_scope(self.__class__, alias):
+                if not cascade:
+                    self.get_children_queryset().using(alias).update(tn_parent=None)
+                self.__class__.objects.using(alias).filter(pk=self.pk).delete()
+                self.__class__.update_tree(using=alias)
+                advance_revision(self.__class__, alias)
+            return
         with no_signals():
             if not cascade:
                 children_qs = self.get_children_queryset()
@@ -163,11 +209,26 @@ class TreeNodeModel(models.Model):
 
     @classmethod
     def delete_tree(cls):
+        from treenode.revision import get_active_registration, tree_mutation
+
+        registration = get_active_registration(cls)
+        if registration:
+            with tree_mutation(cls, using=registration.alias):
+                cls.objects.using(registration.alias).all().delete()
+            clear_refs(cls)
+            clear_cache(cls)
+            return
         with no_signals():
             with transaction.atomic(using=router.db_for_write(cls)):
                 cls.objects.all().delete()
             clear_refs(cls)
             clear_cache(cls)
+
+    @classmethod
+    def tree_mutation(cls, *, using=None):
+        from treenode.revision import tree_mutation
+
+        return tree_mutation(cls, using=using)
 
     @classmethod
     def _get_all(cls, cache=True):
@@ -301,6 +362,30 @@ class TreeNodeModel(models.Model):
         return self.tn_parent_id
 
     def set_parent(self, obj):
+        from treenode.revision import get_active_registration, tree_mutation, verify_instance_alias
+
+        registration = get_active_registration(self.__class__)
+        if registration:
+            alias = verify_instance_alias(self)
+            with tree_mutation(self.__class__, using=alias):
+                if obj:
+                    if obj.__class__ != self.__class__:
+                        raise ValueError(
+                            "obj can't be set as parent, "
+                            f"it is istance of {obj.__class__.__name__}, "
+                            f"expected instance of {self.__class__.__name__}."
+                        )
+                    if obj == self:
+                        raise ValueError("obj can't be set as parent of itself.")
+                    verify_instance_alias(obj)
+                    if not obj.pk:
+                        obj.save(using=alias)
+                    if contains_pk(self.tn_descendants_pks, obj.pk):
+                        obj.tn_parent = self.tn_parent
+                        obj.save(using=alias)
+                self.tn_parent = obj
+                self.save(using=alias)
+            return
         with no_signals():
             if obj:
                 obj_cls = obj.__class__
@@ -326,6 +411,14 @@ class TreeNodeModel(models.Model):
         return self.tn_priority
 
     def set_priority(self, val):
+        from treenode.revision import get_active_registration, tree_mutation, verify_instance_alias
+
+        if get_active_registration(self.__class__):
+            alias = verify_instance_alias(self)
+            with tree_mutation(self.__class__, using=alias):
+                self.tn_priority = val
+                self.save(using=alias)
+            return
         self.tn_priority = val
         self.save()
 
@@ -449,18 +542,19 @@ class TreeNodeModel(models.Model):
         )
 
     @classmethod
-    def update_tree(cls):
+    def update_tree(cls, *, using=None):
         debug_message_prefix = (
             f"[treenode] update {cls.__module__}.{cls.__name__} tree: "
         )
 
         with debug_performance(debug_message_prefix):
             # update db
-            objs_data, dirty_instances, dirty_fields = cls.__get_nodes_data()
+            alias = using or router.db_for_write(cls)
+            objs_data, dirty_instances, dirty_fields = cls.__get_nodes_data(using=alias)
 
-            with transaction.atomic(using=router.db_for_write(cls)):
+            with transaction.atomic(using=alias):
                 if dirty_instances:
-                    cls.objects.bulk_update(
+                    cls.objects.using(alias).bulk_update(
                         dirty_instances,
                         fields=sorted(dirty_fields),
                         batch_size=500,
@@ -544,8 +638,8 @@ class TreeNodeModel(models.Model):
         return obj_dict
 
     @classmethod
-    def __get_nodes_data(cls):  # noqa: C901
-        circular_refs = cls.objects.filter(
+    def __get_nodes_data(cls, *, using):  # noqa: C901
+        circular_refs = cls.objects.using(using).filter(
             Q(pk=F("tn_parent_id"))
             | Q(
                 tn_parent_id__tn_parent_id=F("pk"),
@@ -555,7 +649,7 @@ class TreeNodeModel(models.Model):
         if circular_refs.exists():
             raise CircularReferenceError()
 
-        objs_qs = cls.objects.select_related("tn_parent")
+        objs_qs = cls.objects.using(using).select_related("tn_parent")
         objs_list = list(objs_qs)
         objs_dict = {str(obj.pk): obj for obj in objs_list}
         objs_data_dict = {
@@ -824,4 +918,8 @@ class TreeNodeModel(models.Model):
         return conditional_escape(self.get_display(indent=True))
 
 
+from treenode.revision import install_revision_lifecycle
+
+
+install_revision_lifecycle()
 connect_signals()

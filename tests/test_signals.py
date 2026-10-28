@@ -19,26 +19,29 @@ class TreeNodeDropTableTestCase(TransactionTestCase):
 
     def test_destroy_model(self):
         table_name = ModelToBeDestroyed._meta.db_table
+        try:
+            # drop the table (as if by a `migrate app zero`)
+            with connection.cursor() as cursor:
+                cursor.execute(f"DROP TABLE {table_name}")
 
-        # drop the table (as if by a `migrate app zero`)
-        with connection.cursor() as cursor:
-            cursor.execute(f"DROP TABLE {table_name}")
+            # try to use the model - this should raise an error
+            with self.assertRaises((OperationalError, ProgrammingError)):
+                list(ModelToBeDestroyed.objects.all())
 
-        # try to use the model - this should raise an error
-        with self.assertRaises((OperationalError, ProgrammingError)):
-            list(ModelToBeDestroyed.objects.all())
+            # emit a post_migrate signal as done after migration to zero
+            with self.assertNotRaises((OperationalError, ProgrammingError)):
+                emit_post_migrate_signal(
+                    verbosity=1,
+                    interactive=False,
+                    db=connection.alias,
+                )
 
-        # emit a post_migrate signal as done after migration to zero
-        with self.assertNotRaises((OperationalError, ProgrammingError)):
-            emit_post_migrate_signal(
-                verbosity=1,
-                interactive=False,
-                db=connection.alias,
-            )
-
-        # verify the table is still gone
-        with self.assertRaises((OperationalError, ProgrammingError)):
-            list(ModelToBeDestroyed.objects.all())
+            # verify the table is still gone
+            with self.assertRaises((OperationalError, ProgrammingError)):
+                list(ModelToBeDestroyed.objects.all())
+        finally:
+            with connection.schema_editor() as editor:
+                editor.create_model(ModelToBeDestroyed)
 
 
 class TreeNodeAbstractProxyTestCase(TransactionTestCase):

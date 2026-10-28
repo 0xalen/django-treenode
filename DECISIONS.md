@@ -24,3 +24,20 @@ Rejected: a partial registry before codec validation. It would admit models that
 later codec phase must invalidate, making registration state unreliable.
 
 See docs/adr/001_safe_codec_registry.md.
+
+## Revision ownership
+
+Registered models remain pending until their model and revision tables are present
+on the registered alias. Active mutations refresh derived fields and increment one
+durable revision in the same transaction. Instance routes are checked before row
+SQL; bulk mutations require an explicit matching alias.
+
+Rejected: cache invalidation after commit. A durable database revision is required
+to fence delayed or failed cache work without claiming a false freshness guarantee.
+
+Revision creation and increment use one SQLite/PostgreSQL upsert with `RETURNING`.
+This serializes concurrent first writers without a client-side retry loop. Lock
+contention may still abort a transaction before it commits; it never represents a
+successful supported mutation.
+
+See docs/adr/002_revision_ownership.md.
